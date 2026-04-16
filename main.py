@@ -1049,10 +1049,13 @@ def render_main_page(tab='modules', selected_date="", week_info=None,
                      sig_carousels=None, selected_carousels=None, sig_messages=None, selected_sig=None, 
                      sig_projections_input="", carousel_groups_input="",
                      charts_generated=False,
-                     hpov_start="", hpov_end="", sig_start="", sig_end=""):
+                     hpov_start="", hpov_end="", sig_start="", sig_end="",
+                     include_wmc=True):
     
     today = datetime.now().strftime('%Y-%m-%d')
     week_ago = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
+    
+    wmc_checked = "checked" if include_wmc else ""
     
     if not selected_date:
         selected_date = today
@@ -1268,6 +1271,13 @@ def render_main_page(tab='modules', selected_date="", week_info=None,
                     <textarea name="services" placeholder="Dinner Tonight Get It Fast">{html.escape(services_input)}</textarea>
                 </div>
                 
+                <div class="section-title">3b. Include WMC Ads</div>
+                <div class="form-group" style="display:flex; align-items:center; gap:12px;">
+                    <input type="checkbox" name="include_wmc" id="include_wmc" value="1" {wmc_checked} style="width:20px; height:20px;">
+                    <label for="include_wmc" style="font-weight:500; margin:0;">Include Sponsored (WMC Ads) as first bar</label>
+                    <span style="color:#6b7280; font-size:0.85rem;">— Gray bar showing WMC sponsored content in HPOV</span>
+                </div>
+                
                 <div class="section-title">4️⃣ Projections & Highlight (Optional)</div>
                 <div class="form-row">
                     <div class="form-group">
@@ -1383,6 +1393,7 @@ class ChartHandler(BaseHTTPRequestHandler):
         services_input = params.get('services', [''])[0]
         projections_input = params.get('projections', [''])[0]
         highlight = params.get('highlight', [''])[0].strip()
+        include_wmc = params.get('include_wmc', [''])[0] == '1'
         
         # SIG params
         sig_start = params.get('sig_start', [''])[0]
@@ -1442,10 +1453,14 @@ class ChartHandler(BaseHTTPRequestHandler):
             
             data = query_hpov_data(hpov_start, hpov_end, matched_messages)
             
-            # Query Sponsored (WMC) data
-            sponsored_results = query_hpov_sponsored(hpov_start, hpov_end)
-            sponsored_data = sponsored_results[0] if sponsored_results else None
-            print(f"[INFO] Sponsored data: {sponsored_data}")
+            # Query Sponsored (WMC) data if checkbox is checked
+            sponsored_data = None
+            if include_wmc:
+                sponsored_results = query_hpov_sponsored(hpov_start, hpov_end)
+                sponsored_data = sponsored_results[0] if sponsored_results else None
+                print(f"[INFO] Sponsored data: {sponsored_data}")
+            else:
+                print(f"[INFO] WMC Ads not included (checkbox unchecked)")
             
             services_list = [s.strip() for s in services_input.strip().split('\n') if s.strip()]
             
@@ -1539,6 +1554,7 @@ class ChartHandler(BaseHTTPRequestHandler):
             sig_projections_input=sig_projections_input, carousel_groups_input=carousel_groups_input,
             charts_generated=charts_generated,
             hpov_start=hpov_start, hpov_end=hpov_end, sig_start=sig_start, sig_end=sig_end,
+            include_wmc=include_wmc,
         )
         
         self.send_response(200)
