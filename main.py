@@ -112,27 +112,13 @@ SIG_NAME_MAP = {
 }
 
 HPOV_NAME_MAP = {
+    # Only shorten very specific long patterns
     'rollbacks & more pov': 'R&M POV',
     'rollbacks and more pov': 'R&M POV',
-    'rollbacks & more': 'R&M',
-    'new arrivals': 'NA',
-    'new & trending': 'N&T',
-    'new and trending': 'N&T',
-    'activewear family': 'Activewear',
     'spring baby event': 'Spring Baby',
     'spring home living': 'Spring Home',
-    'walmart+ gifts': 'W+ Gifts',
-    'walmart plus gifts': 'W+ Gifts',
     'the farmers dog': 'Farmers Dog',
-    'onepay credit': 'OnePay CR',
-    'mothers day': "Mother's Day",
-    'mother\'s day': "Mother's Day",
-    'pre order': 'PreOrder',
-    'dinner tonight': 'Dinner',
-    'get it fast': 'Get It Fast',
-    'pharmacy': 'Pharmacy',
-    'tax prep': 'Tax Prep',
-    'forever 21': 'Forever 21',
+    'dinner tonight get it fast': 'Dinner Tonight',
 }
 
 
@@ -174,33 +160,27 @@ def shorten_sig_name(name: str) -> str:
 
 
 def shorten_hpov_name(name: str) -> str:
-    """Shorten HPOV message names for cleaner chart display"""
+    """Shorten HPOV message names for cleaner chart display - conservative approach"""
     lower = name.lower()
     
-    # Direct pattern matches
+    # Direct pattern matches for very long names only
     for pattern, short in HPOV_NAME_MAP.items():
         if pattern in lower:
-            # Handle year prefixes like "2026 Mothers Day"
-            if 'day' in lower and any(str(y) in name for y in range(2024, 2030)):
-                year = ''.join(c for c in name[:4] if c.isdigit())
-                return f"{year} {short}" if year else short
             return short
     
-    # Remove common suffixes/prefixes to shorten
-    result = name
-    
-    # Shorten "Rollbacks" to "RB" if present
-    if 'rollback' in lower:
-        result = result.replace('Rollbacks', 'RB').replace('rollbacks', 'RB')
-    
-    # Final length check
-    if len(result) > 14:
-        return result[:12] + '..'
-    return result
+    # Truncate if still too long (max 16 chars for chart)
+    if len(name) > 16:
+        return name[:14] + '..'
+    return name
 
 
 def normalize_name(name: str) -> str:
     return name.lower().strip()
+
+
+def escape_js_string(s: str) -> str:
+    """Escape string for safe use in JavaScript single-quoted strings"""
+    return s.replace("'", "\\'")
 
 
 def find_matching_message(user_input: str, available_messages: list) -> str:
@@ -431,9 +411,9 @@ def query_sig_messages(start_date: str, end_date: str, carousels: list = None):
         carousel_list = ", ".join([f"'{c}'" for c in carousels])
         carousel_filter = f"AND Carousel_Name IN ({carousel_list})"
     
+    # Aggregate by message_name only to avoid duplicates in selection list
     query = f"""
     SELECT
-      Carousel_Name,
       message_name,
       SUM(module_view_count) AS views,
       SUM(overall_click_count) AS clicks,
@@ -444,9 +424,9 @@ def query_sig_messages(start_date: str, end_date: str, carousels: list = None):
       AND (LOWER(hp_module_name) LIKE 'sig card%' OR LOWER(hp_module_name) LIKE 'scrollable item grid card%')
       AND message_name IS NOT NULL
       {carousel_filter}
-    GROUP BY Carousel_Name, message_name
+    GROUP BY message_name
     ORDER BY views DESC
-    LIMIT 100
+    LIMIT 50
     """
     return run_bq_query(query)
 
@@ -713,9 +693,12 @@ def generate_bar_chart_html(data: list, projections: dict, services_messages: li
         else:
             short_name = shorten_hpov_name(name)
         
-        items_js.append(f"{{ name:'{short_name}', imp:{views}, ctr:{ctr}, color:'{color}', label:'{label}' }}")
+        # Escape for JavaScript
+        safe_name = escape_js_string(short_name)
+        
+        items_js.append(f"{{ name:'{safe_name}', imp:{views}, ctr:{ctr}, color:'{color}', label:'{label}' }}")
         proj_str = f", proj:'{proj}%'" if proj else ""
-        groups_js.append(f"{{ name:'{short_name}', start:{idx}, end:{idx}, color:'{color}', sov:'{sov}%'{proj_str} }}")
+        groups_js.append(f"{{ name:'{safe_name}', start:{idx}, end:{idx}, color:'{color}', sov:'{sov}%'{proj_str} }}")
         idx += 1
     
     if services:
@@ -727,8 +710,9 @@ def generate_bar_chart_html(data: list, projections: dict, services_messages: li
             ctr = float(d.get('ctr', 0) or 0)
             label = format_number(views)
             short_name = shorten_hpov_name(name)
+            safe_name = escape_js_string(short_name)
             
-            items_js.append(f"{{ name:'{short_name}', imp:{views}, ctr:{ctr}, color:'{SERVICES_COLOR}', label:'{label}' }}")
+            items_js.append(f"{{ name:'{safe_name}', imp:{views}, ctr:{ctr}, color:'{SERVICES_COLOR}', label:'{label}' }}")
             services_total_views += views
             idx += 1
         
@@ -918,7 +902,8 @@ def generate_bubble_chart_html(data: list, start_date: str, end_date: str, highl
         else:
             short_name = shorten_hpov_name(name)
         
-        bubble_data.append(f"{{ name:'{short_name}', imp:{views}, atc:{atc_rate}, exit:{exit_rate} }}")
+        safe_name = escape_js_string(short_name)
+        bubble_data.append(f"{{ name:'{safe_name}', imp:{views}, atc:{atc_rate}, exit:{exit_rate} }}")
     
     data_str = ",\n    ".join(bubble_data)
     
@@ -1176,8 +1161,8 @@ def render_main_page(tab='modules', selected_date="", week_info=None,
             views = int(m.get('views', 0) or 0)
             ctr = float(m.get('ctr', 0) or 0)
             checked = "checked" if selected_sig and name in selected_sig else ""
-            short = shorten_sig_name(name)
-            sig_msgs_html += f'''<label class="msg-item"><input type="checkbox" name="selected_sig" value="{html.escape(name)}" {checked}><span class="msg-name" title="{html.escape(name)}">{html.escape(short)}</span><span class="msg-stat">{format_number(views)}</span><span class="msg-ctr">{ctr:.2f}%</span></label>'''
+            # Show ORIGINAL name in selection list (not shortened)
+            sig_msgs_html += f'''<label class="msg-item"><input type="checkbox" name="selected_sig" value="{html.escape(name)}" {checked}><span class="msg-name" title="{html.escape(name)}">{html.escape(name)}</span><span class="msg-stat">{format_number(views)}</span><span class="msg-ctr">{ctr:.2f}%</span></label>'''
     
     results_html = ""
     if charts_generated or module_generated:
