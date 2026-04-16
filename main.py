@@ -111,6 +111,30 @@ SIG_NAME_MAP = {
     'jump right back in': 'CYS',
 }
 
+HPOV_NAME_MAP = {
+    'rollbacks & more pov': 'R&M POV',
+    'rollbacks and more pov': 'R&M POV',
+    'rollbacks & more': 'R&M',
+    'new arrivals': 'NA',
+    'new & trending': 'N&T',
+    'new and trending': 'N&T',
+    'activewear family': 'Activewear',
+    'spring baby event': 'Spring Baby',
+    'spring home living': 'Spring Home',
+    'walmart+ gifts': 'W+ Gifts',
+    'walmart plus gifts': 'W+ Gifts',
+    'the farmers dog': 'Farmers Dog',
+    'onepay credit': 'OnePay CR',
+    'mothers day': "Mother's Day",
+    'mother\'s day': "Mother's Day",
+    'pre order': 'PreOrder',
+    'dinner tonight': 'Dinner',
+    'get it fast': 'Get It Fast',
+    'pharmacy': 'Pharmacy',
+    'tax prep': 'Tax Prep',
+    'forever 21': 'Forever 21',
+}
+
 
 def get_walmart_fiscal_week_dates(selected_date: str):
     dt = datetime.strptime(selected_date, "%Y-%m-%d")
@@ -147,6 +171,32 @@ def shorten_sig_name(name: str) -> str:
     if len(name) > 18:
         return name[:16] + '..'
     return name
+
+
+def shorten_hpov_name(name: str) -> str:
+    """Shorten HPOV message names for cleaner chart display"""
+    lower = name.lower()
+    
+    # Direct pattern matches
+    for pattern, short in HPOV_NAME_MAP.items():
+        if pattern in lower:
+            # Handle year prefixes like "2026 Mothers Day"
+            if 'day' in lower and any(str(y) in name for y in range(2024, 2030)):
+                year = ''.join(c for c in name[:4] if c.isdigit())
+                return f"{year} {short}" if year else short
+            return short
+    
+    # Remove common suffixes/prefixes to shorten
+    result = name
+    
+    # Shorten "Rollbacks" to "RB" if present
+    if 'rollback' in lower:
+        result = result.replace('Rollbacks', 'RB').replace('rollbacks', 'RB')
+    
+    # Final length check
+    if len(result) > 14:
+        return result[:12] + '..'
+    return result
 
 
 def normalize_name(name: str) -> str:
@@ -661,7 +711,7 @@ def generate_bar_chart_html(data: list, projections: dict, services_messages: li
         if chart_type == 'sig':
             short_name = shorten_sig_name(name)
         else:
-            short_name = name[:16] + '..' if len(name) > 18 else name
+            short_name = shorten_hpov_name(name)
         
         items_js.append(f"{{ name:'{short_name}', imp:{views}, ctr:{ctr}, color:'{color}', label:'{label}' }}")
         proj_str = f", proj:'{proj}%'" if proj else ""
@@ -676,7 +726,7 @@ def generate_bar_chart_html(data: list, projections: dict, services_messages: li
             views = int(d.get('views', 0) or 0)
             ctr = float(d.get('ctr', 0) or 0)
             label = format_number(views)
-            short_name = name[:16] + '..' if len(name) > 18 else name
+            short_name = shorten_hpov_name(name)
             
             items_js.append(f"{{ name:'{short_name}', imp:{views}, ctr:{ctr}, color:'{SERVICES_COLOR}', label:'{label}' }}")
             services_total_views += views
@@ -866,7 +916,7 @@ def generate_bubble_chart_html(data: list, start_date: str, end_date: str, highl
         if chart_type == 'sig':
             short_name = shorten_sig_name(name)
         else:
-            short_name = name[:18] + '..' if len(name) > 20 else name
+            short_name = shorten_hpov_name(name)
         
         bubble_data.append(f"{{ name:'{short_name}', imp:{views}, atc:{atc_rate}, exit:{exit_rate} }}")
     
