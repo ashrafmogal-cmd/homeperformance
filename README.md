@@ -102,7 +102,7 @@ The app uses these default filters:
 ## 👥 Team
 
 - **Owner**: Homepage Strategy Team
-- **Contact**: Pramit Singh
+- **Contact**: Ashraf Mogal & Ayowole Delegan
 
 ## 📝 License
 

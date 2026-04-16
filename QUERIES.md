@@ -173,6 +173,27 @@ ORDER BY views DESC
 LIMIT 50
 ```
 
+### Get HPOV Sponsored/WMC Data
+
+This query retrieves WMC (Walmart Media Connect) sponsored ads data for HPOV cards.
+Shown as the **first bar** in the bar chart with gray color.
+
+```sql
+SELECT
+  'WMC Ads' AS message_name,
+  SUM(module_view_count) AS views,
+  SUM(overall_click_count) AS clicks,
+  ROUND(SAFE_DIVIDE(SUM(overall_click_count), SUM(module_view_count)) * 100, 2) AS ctr,
+  ROUND((1 - SAFE_DIVIDE(SUM(all_clicks_count_flag), SUM(asset_clicks_count))) * 100, 2) AS exit_rate,
+  SUM(total_atc_count) AS atc,
+  ROUND(SAFE_DIVIDE(SUM(total_atc_count), SUM(module_view_count)) * 1000, 2) AS atc_rate,
+  SUM(total_gmv) AS gmv
+FROM `wmt-site-content-strategy.scs_production.hp_summary_asset`
+WHERE session_start_dt BETWEEN '{{START_DATE}}' AND '{{END_DATE}}'
+  AND (CONTENT_TYPE_CASE) = 'WMC'  -- Sponsored content
+  AND LOWER(hp_module_name) LIKE 'autoscroll card%'
+```
+
 ### Get HPOV Message Details
 
 ```sql

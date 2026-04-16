@@ -314,6 +314,26 @@ def query_hpov_data(start_date: str, end_date: str, messages: list):
     return run_bq_query(query)
 
 
+def query_hpov_sponsored(start_date: str, end_date: str):
+    """Query WMC (Sponsored/Ads) data for AutoScroll Cards 1-5"""
+    query = f"""
+    SELECT
+      'WMC Ads' AS message_name,
+      SUM(module_view_count) AS views,
+      SUM(overall_click_count) AS clicks,
+      ROUND(SAFE_DIVIDE(SUM(overall_click_count), SUM(module_view_count)) * 100, 2) AS ctr,
+      ROUND((1 - SAFE_DIVIDE(SUM(all_clicks_count_flag), SUM(asset_clicks_count))) * 100, 2) AS exit_rate,
+      SUM(total_atc_count) AS atc,
+      ROUND(SAFE_DIVIDE(SUM(total_atc_count), SUM(module_view_count)) * 1000, 2) AS atc_rate,
+      SUM(total_gmv) AS gmv
+    FROM {TABLE}
+    WHERE session_start_dt BETWEEN '{start_date}' AND '{end_date}'
+      AND ({CONTENT_TYPE_CASE}) = 'WMC'
+      AND LOWER(hp_module_name) LIKE 'autoscroll card%'
+    """
+    return run_bq_query(query)
+
+
 def get_fytd_benchmark(module_type='hpov'):
     if module_type == 'hpov':
         module_filter = "LOWER(hp_module_name) LIKE 'autoscroll card%'"
@@ -586,7 +606,12 @@ def generate_module_performance_html(data_total, data_ios, data_android,
 
 def generate_bar_chart_html(data: list, projections: dict, services_messages: list, 
                             start_date: str, end_date: str, benchmark: float, 
-                            chart_type='hpov', carousel_groups: dict = None):
+                            chart_type='hpov', carousel_groups: dict = None,
+                            sponsored_data: dict = None):
+    
+    # Add sponsored data to total views calculation if present
+    sponsored_views = int(sponsored_data.get('views', 0) or 0) if sponsored_data else 0
+    sponsored_clicks = int(sponsored_data.get('clicks', 0) or 0) if sponsored_data else 0
     
     if chart_type == 'hpov' and services_messages:
         services_lower = [s.lower() for s in services_messages]
@@ -596,9 +621,10 @@ def generate_bar_chart_html(data: list, projections: dict, services_messages: li
         non_services = data
         services = []
     
-    total_views = sum(int(d.get('views', 0) or 0) for d in data)
-    total_clicks = sum(int(d.get('clicks', 0) or 0) for d in data)
+    total_views = sum(int(d.get('views', 0) or 0) for d in data) + sponsored_views
+    total_clicks = sum(int(d.get('clicks', 0) or 0) for d in data) + sponsored_clicks
     
+    # Exclude sponsored from top performer calc (only Merch)
     top_performer = max(data, key=lambda x: float(x.get('ctr', 0) or 0)) if data else None
     top_name = top_performer.get('message_name', 'N/A')[:15] if top_performer else 'N/A'
     top_ctr = float(top_performer.get('ctr', 0) or 0) if top_performer else 0
@@ -606,6 +632,17 @@ def generate_bar_chart_html(data: list, projections: dict, services_messages: li
     items_js = []
     groups_js = []
     idx = 0
+    
+    # Add Sponsored (WMC) as FIRST bar if present
+    if sponsored_data and chart_type == 'hpov':
+        views = int(sponsored_data.get('views', 0) or 0)
+        ctr = float(sponsored_data.get('ctr', 0) or 0)
+        label = format_number(views)
+        sov = round(views / total_views * 100, 1) if total_views > 0 else 0
+        
+        items_js.append(f"{{ name:'WMC Ads', imp:{views}, ctr:{ctr}, color:'#6b7280', label:'{label}' }}")
+        groups_js.append(f"{{ name:'WMC Ads', start:0, end:0, color:'#6b7280', sov:'{sov}%' }}")
+        idx += 1
     
     for d in non_services:
         name = d.get('message_name', '')
@@ -1405,6 +1442,11 @@ class ChartHandler(BaseHTTPRequestHandler):
             
             data = query_hpov_data(hpov_start, hpov_end, matched_messages)
             
+            # Query Sponsored (WMC) data
+            sponsored_results = query_hpov_sponsored(hpov_start, hpov_end)
+            sponsored_data = sponsored_results[0] if sponsored_results else None
+            print(f"[INFO] Sponsored data: {sponsored_data}")
+            
             services_list = [s.strip() for s in services_input.strip().split('\n') if s.strip()]
             
             projections = {}
@@ -1416,7 +1458,7 @@ class ChartHandler(BaseHTTPRequestHandler):
             
             benchmark = get_fytd_benchmark('hpov')
             
-            bar_html = generate_bar_chart_html(data, projections, services_list, hpov_start, hpov_end, benchmark, 'hpov')
+            bar_html = generate_bar_chart_html(data, projections, services_list, hpov_start, hpov_end, benchmark, 'hpov', None, sponsored_data)
             bubble_html = generate_bubble_chart_html(data, hpov_start, hpov_end, highlight if highlight else None, 'hpov')
             
             generated_charts['bar'] = bar_html
